@@ -1,38 +1,36 @@
 import command_code::*;
 
 module booth
-#( parameter integer reg_size = 8, booth_buffer_size = 4 )
+#( parameter integer reg_size = 8 )
 ( booth_if.slave main );
 
 
 
-    localparam iter_count = reg_size / 2;
+	localparam iter_count = reg_size / 2;
 
-	logic [ $clog2(booth_buffer_size)-1 : 0 ] read_pointer;
-
-    logic [ reg_size-1 : 0 ] r1, r2, r3;
-    logic [ reg_size+1 : 0 ] ra, rb, rc, sum;
-    logic [ $clog2( (reg_size / 2) + 1 ) - 1 : 0 ] iterator;
-    logic bt, add_1_trg;
-    logic sign;
+	logic [ reg_size-1 : 0 ] r1, r2, r3;
+	logic [ reg_size+1 : 0 ] ra, rb, rc, sum;
+	logic [ $clog2( (reg_size / 2) + 1 ) - 1 : 0 ] iterator;
+	logic bt, add_1_trg;
+	logic sign;
 	
 	enum
 	{
 	
 		ZERO_DATA,
-        GOT_DATA,
+		GOT_DATA,
 		CHECK_TRIGGERS,
-        ADD_SINGLE,
-        SUB_SINGLE,
-        ADD_DOUBLE,
-        SUB_DOUBLE,
-        NOTHING,
-        SHIFT,
-        RETURN_TO_REG,
-        COMPENSATION_1,
-        COMPENSATION_2,
-        DONE,
-		GOT_MORE
+		ADD_SINGLE,
+		SUB_SINGLE,
+		ADD_DOUBLE,
+		SUB_DOUBLE,
+		NOTHING,
+		SHIFT,
+		RETURN_TO_REG,
+		COMPENSATION_1,
+		COMPENSATION_2,
+		DONE
+		//GOT_MORE
 	
 	} state;
 
@@ -41,171 +39,147 @@ module booth
 	always_ff @( posedge main.clk )
 	if(main.rst)
 	begin
-		read_pointer <= 'b0;
 		state <= ZERO_DATA;
-		for( integer i = 0; i < booth_buffer_size; i = i + 1 )
-			main.data_req[i] <= 1;
-		for( integer i = 0; i < booth_buffer_size; i = i + 1 )
-			main.done[i] <= 0;
+		main.data_req <= 1;
+		main.done <= 0;
 	end
 	else
 	
 		unique case(state)
 		
 			ZERO_DATA:
-			begin
-
-                read_pointer <= 'b0;
-
-				if(main.data_valid[read_pointer])
-                begin
-					state <= GOT_DATA;
-
-                end
-				else
-					read_pointer <= 'b0;
-
-			end
+				state <= main.data_valid ? GOT_DATA : ZERO_DATA;
 					
 			GOT_DATA:
 			begin
 
-				main.data_req[read_pointer] <= 0;
+				main.data_req <= 0;
 
-				r1 <= main.operand_1[read_pointer];
-                r2 <= main.operand_2[read_pointer];
-                sign <= main.sign[read_pointer];
-                rb <= 'b0;
-                rc <= 'b0;
-                bt <= 0;
-                iterator <= iter_count;
+				r1 <= main.operand_1;
+				r2 <= main.operand_2;
+				sign <= main.sign;
+				rb <= 'b0;
+				rc <= 'b0;
+				bt <= 0;
+				iterator <= iter_count;
 
-                state <= CHECK_TRIGGERS;
+				state <= CHECK_TRIGGERS;
 
 			end
 			
 			CHECK_TRIGGERS:
-            case({ r2[1:0], bt })
+			case({ r2[1:0], bt })
 
-                3'b001, 3'b010:
-                    state <= ADD_SINGLE;
+				3'b001, 3'b010:
+					state <= ADD_SINGLE;
 
-                3'b011:
-                    state <= ADD_DOUBLE;
+				3'b011:
+					state <= ADD_DOUBLE;
 
-                3'b100:
-                    state <= SUB_DOUBLE;
+				3'b100:
+					state <= SUB_DOUBLE;
 
-                3'b101, 3'b110:
-                    state <= SUB_SINGLE;
+				3'b101, 3'b110:
+					state <= SUB_SINGLE;
 
-                default:
-                    state <= NOTHING;
+				default:
+					state <= NOTHING;
 
-            endcase
+			endcase
 
-            ADD_SINGLE:
-            begin
-                ra <= { sign & r1[ reg_size-1 ], sign & r1[ reg_size-1 ], r1 };
-                add_1_trg <= 0;
-                state <= SHIFT;
-            end
+			ADD_SINGLE:
+			begin
+				ra <= { sign & r1[ reg_size-1 ], sign & r1[ reg_size-1 ], r1 };
+				add_1_trg <= 0;
+				state <= SHIFT;
+			end
 
-            ADD_DOUBLE:
-            begin
-                ra <= { sign & r1[ reg_size-1 ], r1, 1'b0 };
-                add_1_trg <= 0;
-                state <= SHIFT;
-            end
+			ADD_DOUBLE:
+			begin
+				ra <= { sign & r1[ reg_size-1 ], r1, 1'b0 };
+				add_1_trg <= 0;
+				state <= SHIFT;
+			end
 
-            SUB_SINGLE:
-            begin
-                ra <= { ~sign | ~r1[ reg_size-1 ], ~sign | ~r1[ reg_size-1 ], ~r1 };
-                add_1_trg <= 1;
-                state <= SHIFT;
-            end
+			SUB_SINGLE:
+			begin
+				ra <= { ~sign | ~r1[ reg_size-1 ], ~sign | ~r1[ reg_size-1 ], ~r1 };
+				add_1_trg <= 1;
+				state <= SHIFT;
+			end
 
-            SUB_DOUBLE:
-            begin
-                ra <= { ~sign | ~r1[ reg_size-1 ], ~r1, 1'b1 };
-                add_1_trg <= 1;
-                state <= SHIFT;
-            end
+			SUB_DOUBLE:
+			begin
+				ra <= { ~sign | ~r1[ reg_size-1 ], ~r1, 1'b1 };
+				add_1_trg <= 1;
+				state <= SHIFT;
+			end
 
-            NOTHING:
-            begin
-                ra <= 'b0;
-                add_1_trg <= 0;
-                state <= SHIFT;
-            end
+			NOTHING:
+			begin
+				ra <= 'b0;
+				add_1_trg <= 0;
+				state <= SHIFT;
+			end
 
-            SHIFT:
-            begin
-                { rc, r3, bt } <=
-                 { sum[ reg_size+1 ], sum[ reg_size+1 ], sum, r2[ reg_size-1 : 1] };
-                iterator = iterator - 1;
-                state <= RETURN_TO_REG;
-            end
+			SHIFT:
+			begin
+				{ rc, r3, bt } <=
+				 { sum[ reg_size+1 ], sum[ reg_size+1 ], sum, r2[ reg_size-1 : 1] };
+				iterator = iterator - 1;
+				state <= RETURN_TO_REG;
+			end
 
-            RETURN_TO_REG:
-            begin
-                rb <= rc;
-                r2 <= r3;
+			RETURN_TO_REG:
+			begin
+				rb <= rc;
+				r2 <= r3;
 
-                if( iterator == 0 )
-                    state <= bt & ~sign ? COMPENSATION_1 : DONE;
-                else
-                    state <= CHECK_TRIGGERS;
-            end
+				if( iterator == 0 )
+					state <= bt & ~sign ? COMPENSATION_1 : DONE;
+				else
+					state <= CHECK_TRIGGERS;
+			end
 
-            COMPENSATION_1:
-            begin
-                ra <= { 2'b00, r1 };
-                add_1_trg <= 0;
-                state <= COMPENSATION_2;
-            end
+			COMPENSATION_1:
+			begin
+				ra <= { 2'b00, r1 };
+				add_1_trg <= 0;
+				state <= COMPENSATION_2;
+			end
 
-            COMPENSATION_2:
-            begin
-                rc <= sum;
-                state <= DONE;
-            end
+			COMPENSATION_2:
+			begin
+				rc <= sum;
+				state <= DONE;
+			end
 			
 			DONE:
 			begin
 
-				main.done[read_pointer] <= 1;
-				main.out_data_1[read_pointer] <= rc[ reg_size-1 : 0 ];
-                main.out_data_2[read_pointer] <= r2;
-				main.data_req[read_pointer] <= 1;
+				main.out_data_1 <= rc[ reg_size-1 : 0 ];
+				main.out_data_2 <= r2;
 
-				state <= main.data_valid ? GOT_MORE : ZERO_DATA;
-					
-			end
-			
-			GOT_MORE:
-			begin
-				if( read_pointer == booth_buffer_size-1 )
-					read_pointer <= 'b0;
+				if( main.got_out )
+				begin
+					main.done <= 0;
+					main.data_req <= 1;
+					state <= ZERO_DATA;
+				end
+
 				else
-					read_pointer <= read_pointer + 1;
+				begin
+					main.done <= 1;
+					state <= DONE;
+				end
 					
-				state <= GOT_DATA;	
-
 			end
 			
 		endcase
 
-
-
-    always_ff @( posedge main.clk )
-        for( integer i = 0; i < booth_buffer_size; i = i + 1 )
-            if( main.got_out[i] )
-                main.done[i] <= 0;
-
-    
 	
-    assign sum = add_1_trg ? ra + rb + 1 : ra + rb;
+	
+	assign sum = add_1_trg ? ra + rb + 1 : ra + rb;
 	
 
 endmodule : booth

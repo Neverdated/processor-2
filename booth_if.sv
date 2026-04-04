@@ -1,20 +1,20 @@
 import command_code::*;
 
 interface booth_if
-#( parameter reg_size = 8, booth_buffer_size = 4 )
+#( parameter reg_size = 8 )
 ( input bit	clk, rst );
 
 
 
-	logic[ reg_size-1 :0 ] out_data_1 [ booth_buffer_size-1 :0 ];
-	logic[ reg_size-1 :0 ] out_data_2 [ booth_buffer_size-1 :0 ];
-	logic done [ booth_buffer_size-1 :0 ];
-	logic[ reg_size-1 :0 ] operand_1 [ booth_buffer_size-1 :0 ];
-	logic[ reg_size-1 :0 ] operand_2 [ booth_buffer_size-1 :0 ];
-	logic [ booth_buffer_size-1 :0 ] data_valid;
-	logic data_req [ booth_buffer_size-1 :0 ];
-	logic got_out [ booth_buffer_size-1 :0 ];
-	logic sign [ booth_buffer_size-1 :0 ];
+	logic[ reg_size-1 :0 ] out_data_1;
+	logic[ reg_size-1 :0 ] out_data_2;
+	logic done;
+	logic[ reg_size-1 :0 ] operand_1;
+	logic[ reg_size-1 :0 ] operand_2;
+	logic data_valid;
+	logic data_req;
+	logic got_out;
+	logic sign;
 	
 	
 
