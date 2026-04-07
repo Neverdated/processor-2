@@ -17,6 +17,7 @@ module simple_alu
 
 	logic [ reg_size-1 : 0 ] operand_2;
 	logic [ reg_size : 0 ] sum;
+	logic [reg_size-1 : 0 ] result;
 
 
 
@@ -25,11 +26,9 @@ module simple_alu
 
 
 		if(rst) begin
-			out <= 0;
 			carry_out <= 0;
 			overflow_out <= 0;
-			zero_out <= 0;
-			sign_out <= 0;
+			result <= 0;
 		end
 		else begin
 
@@ -39,36 +38,21 @@ module simple_alu
 			case( opcode )
 
 				ADD, ADC, SUB, SBB:
-				begin
-					out <= sum[ reg_size-1 : 0 ];
-					sign_out <= sum[ reg_size - 1 ];
-				end
+					result <= sum[ reg_size-1 : 0 ];
 
 				OR:
-				begin
-					out <= operand_a | operand_b;
-					sign_out <= operand_a[ reg_size-1 ] | operand_b[ reg_size-1 ];
-				end
+					result <= operand_a | operand_b;
 
 				AND:
-				begin
-					out <= operand_a & operand_b;
-					sign_out <= operand_a[ reg_size-1 ] & operand_b[ reg_size-1 ];
-				end
+					result <= operand_a & operand_b;
 
 				XOR:
-				begin
-					out <= operand_a ^ operand_b;
-					sign_out <= operand_a[ reg_size-1 ] ^ operand_b[ reg_size-1 ];
-				end
+					result <= operand_a ^ operand_b;
 
 				default:
-				begin
-					out <= operand_a;
-					sign_out <= operand_a[ reg_size-1 ];
-				end
+					result <= operand_a;
 
-			endcase //out op decode
+			endcase //result op decode
 
 
 
@@ -97,28 +81,6 @@ module simple_alu
 
 
 
-			//zero
-			case(opcode)
-
-				ADD, ADC, SUB, SBB, CMP:
-					zero_out <= sum == 0;
-
-				OR:
-					zero_out <= operand_a | operand_b == 0;
-
-				AND:
-					zero_out <= operand_a & operand_b == 0;
-
-				XOR:
-					zero_out <= operand_a ^ operand_b == 0;
-
-				default:
-					zero_out <= 0;		
-
-			endcase //zero op decode
-
-
-
 		end
 	end //always
 
@@ -137,20 +99,19 @@ module simple_alu
 	always_comb
 		case(opcode)
 
-			ADC:
-				sum = operand_a + operand_2 + carry_in;
-
+			ADC, SBB:
+				sum = carry_in ? operand_a + operand_2 + 1 : operand_a + operand_2;
 			SUB, CMP:
 				sum = operand_a + operand_2 + 1;
 
-			SBB:
-				sum = operand_a + operand_2 + 1 + carry_in;
-			
 			default:
 				sum = operand_a + operand_2;
 
 		endcase
 
+	assign sign_out = result[reg_size-1];
+	assign zero_out = result == 0;
+	assign out = result;
 
 
 endmodule : simple_alu

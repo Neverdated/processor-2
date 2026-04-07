@@ -119,6 +119,7 @@ module divide
 
 				main.quotient <= r1;
 				main.remainder <= rc[ reg_size : 1 ];
+				main.overflow_out <= 0;
 
 				if( main.got_out )
 				begin
@@ -140,6 +141,7 @@ module divide
 
 				main.quotient <= 'b0;
 				main.remainder <= 'b0;
+				main.overflow_out <= 1;
 
 				if( main.got_out )
 				begin
@@ -161,6 +163,8 @@ module divide
 	
 	
 	assign sum = add_1_trg ? ra + rb + 1 : ra + rb;
+	assign main.zero_out = r1 == 'b0;
+	assign main.sign_out = r1[ reg_size-1 ];
 	
 
 endmodule : divide

@@ -59,7 +59,7 @@ module booth
 				r2 <= main.operand_2;
 				sign <= main.sign;
 				rb <= 'b0;
-				rc <= 'b0;
+				rc[ reg_size+1 : reg_size-1 ] <= 2'b00;
 				bt <= 0;
 				iterator <= iter_count;
 
@@ -180,6 +180,8 @@ module booth
 	
 	
 	assign sum = add_1_trg ? ra + rb + 1 : ra + rb;
+	assign main.sign_out = rc[ reg_size-1 ];
+	assign main.zero_out = { rc[ reg_size-1 : 0 ], r2 } == 'b0;
 	
 
 endmodule : booth

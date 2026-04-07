@@ -15,20 +15,21 @@ interface divide_if
 	logic data_req;
 	logic got_out;
 	logic sign;
+	logic sign_out, zero_out, overflow_out;
 	
 	
 
 	modport master
 	(
 		output dividend_1, dividend_2, divider, data_valid, sign, got_out,
-		input clk, rst, quotient, remainder, data_req, done
+		input clk, rst, quotient, remainder, data_req, done, sign_out, zero_out, overflow_out
 	);
 	
 	modport slave
 	(
 	
 		input clk, rst, dividend_1, dividend_2, divider, data_valid, sign, got_out,
-		output quotient, remainder, data_req, done
+		output quotient, remainder, data_req, done, sign_out, zero_out, overflow_out
 	
 	);
 
