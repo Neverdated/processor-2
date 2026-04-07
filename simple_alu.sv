@@ -61,8 +61,8 @@ module simple_alu
 
 				ADD, ADC, SUB, SBB, CMP:
 				begin
-					case({ operand_a[ reg_size-1 ], operand_b[ reg_size-1 ], sum[ reg_size-1 ] })
-						001, 110:
+					case({ operand_a[ reg_size-1 ], operand_2[ reg_size-1 ], sum[ reg_size-1 ] })
+						3'b001, 3'b110:
 							overflow_out <= 1;
 						default:
 							overflow_out <= 0;
