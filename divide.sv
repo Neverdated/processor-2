@@ -11,13 +11,15 @@ module divide
 	logic [ reg_size-1 : 0 ] r1, r2, r3;
 	logic [ reg_size : 0 ] ra, rb, rc, sum;
 	logic [ $clog2( reg_size + 1 ) - 1 : 0 ] iterator;
-	logic add_1_trg, sign_wire;
+	logic add_1_trg, sign_wire, sign;
 	
 	enum
 	{
 	
 		ZERO_DATA,
 		GOT_DATA,
+		EXTRA_SHIFT_1,
+		EXTRA_SHIFT_2,
 		CHECK_SUB_1,
 		CHECK_SUB_2,
 		SHIFT,
@@ -63,28 +65,43 @@ module divide
 				r2 <= main.divider;
 				add_1_trg <= 1;
 				iterator <= iter_count;
+				sign <= main.sign;
 
+				state <= sign ? EXTRA_SHIFT_1 : CHECK_SUB_1;
+
+			end
+
+			EXTRA_SHIFT_1:
+			begin
+				{ rc, r3 } <= { rb[ reg_size-1 : 0 ], r1, sign_wire };
+				state <= EXTRA_SHIFT_2;
+			end
+
+			EXTRA_SHIFT_2:
+			begin
+				rb <= rc;
+				r1 <= r3;
+				iterator <= iterator - 'b1;
 				state <= CHECK_SUB_1;
-
 			end
 
 			CHECK_SUB_1:
 			begin
-				ra <= sign_wire ?
-				 { main.sign & r2[ reg_size-1 ] , r2 } : { ~main.sign | ~r2[ reg_size-1 ] , ~r2 };
-				add_1_trg <= ~sign_wire;
-				rb[ reg_size ] <= main.sign & rb[ reg_size-1 ];
+				ra <= sign & (rb[ reg_size-1 ] ^ r2[ reg_size-1 ]) ?
+				 { sign & r2[ reg_size-1 ] , r2 } : { ~sign | ~r2[ reg_size-1 ] , ~r2 };
+				add_1_trg <= ~sign | ~sign_wire;
+				rb[ reg_size ] <= sign & rb[ reg_size-1 ];
 
 				state <= CHECK_SUB_2;
 			end
 
 			CHECK_SUB_2:
-				state <= rb[ reg_size-1 ] ^ sum[ reg_size ] ? SHIFT : ERROR;
+				state <= rb[ reg_size ] ^ sum[ reg_size ] ? SHIFT : ERROR;
 
 			SHIFT:
 			begin
 				{ rc, r3 } <= { sum[ reg_size-1 : 0 ], r1, ~sum[ reg_size ] };
-				iterator <= iterator - 1;
+				iterator <= iterator - 'b1;
 				state <= RETURN_TO_REG;
 			end
 
@@ -94,7 +111,7 @@ module divide
 				r1 <= r3;
 
 				if( iterator == 0 )
-					state <= r3[0] ? ( main.sign ? NEGATE_RESULT : DONE ) : RESTORE_1;
+					state <= r3[0] ? ( sign ? NEGATE_RESULT : DONE ) : RESTORE_1;
 				else
 					state <= r3[0] ? SUB : SUM;
 
@@ -102,14 +119,14 @@ module divide
 
 			SUM:
 			begin
-				ra <= { main.sign & r2[ reg_size-1 ] , r2 };
+				ra <= { sign & r2[ reg_size-1 ] , r2 };
 				add_1_trg <= 0;
 				state <= SHIFT;
 			end
 
 			SUB:
 			begin
-				ra <= { ~main.sign | ~r2[ reg_size-1 ] , ~r2 };
+				ra <= { ~sign | ~r2[ reg_size-1 ] , ~r2 };
 				add_1_trg <= 1;
 				state <= SHIFT;
 			end
@@ -124,7 +141,7 @@ module divide
 			RESTORE_2:
 			begin
 				rc <= sum;
-				state <= main.sign ? NEGATE_RESULT : DONE ;
+				state <= sign ? NEGATE_RESULT : DONE ;
 			end
 
 			NEGATE_RESULT:
@@ -186,7 +203,7 @@ module divide
 	assign sum = add_1_trg ? ra + rb + 1 : ra + rb;
 	assign sign_wire = rb[ reg_size-1 ] ^ r2[ reg_size-1 ];
 	assign main.zero_out = r1 == 'b0;
-	assign main.sign_out = r1[ reg_size-1 ];
+	assign sign_out = r1[ reg_size-1 ];
 	
 
 endmodule : divide

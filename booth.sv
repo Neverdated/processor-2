@@ -126,7 +126,7 @@ module booth
 			begin
 				{ rc, r3, bt } <=
 				 { sum[ reg_size+1 ], sum[ reg_size+1 ], sum, r2[ reg_size-1 : 1] };
-				iterator <= iterator - 1;
+				iterator <= iterator - 'b1;
 				state <= RETURN_TO_REG;
 			end
 
