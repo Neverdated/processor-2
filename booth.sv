@@ -2,7 +2,15 @@ import command_code::*;
 
 module booth
 #( parameter integer reg_size = 8 )
-( booth_if.slave main );
+( 	
+
+	input clk, rst,
+	input logic[ reg_size-1 : 0 ] operand_a, operand_b,
+	input logic data_valid_mult, got_out_mult, sign,
+	output logic[ reg_size-1 : 0 ] mult_out_1, mult_out_2,
+	output logic done_mult, data_req_mult, sign_out_mult, zero_out_mult
+
+);
 
 
 
@@ -12,7 +20,6 @@ module booth
 	logic [ reg_size+1 : 0 ] ra, rb, rc, sum;
 	logic [ $clog2( (reg_size / 2) + 1 ) - 1 : 0 ] iterator;
 	logic bt, add_1_trg;
-	logic sign;
 	
 	enum
 	{
@@ -36,28 +43,33 @@ module booth
 
 
 
-	always_ff @( posedge main.clk )
-	if(main.rst)
+	always_ff @( posedge clk or posedge rst )
+	if(rst)
 	begin
 		state <= ZERO_DATA;
-		main.data_req <= 1;
-		main.done <= 0;
+		data_req_mult <= 1;
+		done_mult <= 0;
+
+		mult_out_1 <= 'b0;
+		mult_out_2 <= 'b0;
+
+		rc <= 'b0;
+		r2 <= 'b0;
 	end
 	else
 	
 		unique case(state)
 		
 			ZERO_DATA:
-				state <= main.data_valid ? GOT_DATA : ZERO_DATA;
+				state <= data_valid_mult ? GOT_DATA : ZERO_DATA;
 					
 			GOT_DATA:
 			begin
 
-				main.data_req <= 0;
+				data_req_mult <= 0;
 
-				r1 <= main.operand_1;
-				r2 <= main.operand_2;
-				sign <= main.sign;
+				r1 <= operand_a;
+				r2 <= operand_b;
 				rb <= 'b0;
 				rc[ reg_size+1 : reg_size-1 ] <= 2'b00;
 				bt <= 0;
@@ -157,19 +169,19 @@ module booth
 			DONE:
 			begin
 
-				main.out_data_1 <= rc[ reg_size-1 : 0 ];
-				main.out_data_2 <= r2;
+				mult_out_1 <= rc[ reg_size-1 : 0 ];
+				mult_out_2 <= r2;
 
-				if( main.got_out )
+				if( got_out_mult )
 				begin
-					main.done <= 0;
-					main.data_req <= 1;
+					done_mult <= 0;
+					data_req_mult <= 1;
 					state <= ZERO_DATA;
 				end
 
 				else
 				begin
-					main.done <= 1;
+					done_mult <= 1;
 					state <= DONE;
 				end
 					
@@ -180,8 +192,8 @@ module booth
 	
 	
 	assign sum = add_1_trg ? ra + rb + 1 : ra + rb;
-	assign main.sign_out = rc[ reg_size-1 ];
-	assign main.zero_out = { rc[ reg_size-1 : 0 ], r2 } == 'b0;
+	assign sign_out_mult = rc[ reg_size-1 ];
+	assign zero_out_mult = { rc[ reg_size-1 : 0 ], r2 } == 'b0;
 	
 
 endmodule : booth

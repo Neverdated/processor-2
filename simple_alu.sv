@@ -8,8 +8,8 @@ module simple_alu
 	input logic [ reg_size-1 : 0 ] operand_a, operand_b,
 	input commandCode_e opcode,
 	input logic carry_in,
-	output logic [ reg_size-1 : 0 ] out,
-	output logic carry_out, zero_out, overflow_out, sign_out
+	output logic [ reg_size-1 : 0 ] out_simple,
+	output logic carry_out_simple, zero_out_simple, overflow_out_simple, sign_out_simple
 
 );
 
@@ -26,8 +26,8 @@ module simple_alu
 
 
 		if(rst) begin
-			carry_out <= 0;
-			overflow_out <= 0;
+			carry_out_simple <= 0;
+			overflow_out_simple <= 0;
 			result <= 0;
 		end
 		else begin
@@ -63,18 +63,18 @@ module simple_alu
 				begin
 					case({ operand_a[ reg_size-1 ], operand_2[ reg_size-1 ], sum[ reg_size-1 ] })
 						3'b001, 3'b110:
-							overflow_out <= 1;
+							overflow_out_simple <= 1;
 						default:
-							overflow_out <= 0;
+							overflow_out_simple <= 0;
 					endcase
 
-					carry_out <= sum[reg_size];
+					carry_out_simple <= sum[reg_size];
 				end
 
 				default:
 				begin
-					overflow_out <= 0;
-					carry_out <= 0;
+					overflow_out_simple <= 0;
+					carry_out_simple <= 0;
 				end
 
 			endcase //overflow op decode
@@ -109,9 +109,9 @@ module simple_alu
 
 		endcase
 
-	assign sign_out = result[reg_size-1];
-	assign zero_out = result == 0;
-	assign out = result;
+	assign sign_out_simple = result[reg_size-1];
+	assign zero_out_simple = result == 0;
+	assign out_simple = result;
 
 
 endmodule : simple_alu

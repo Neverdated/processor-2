@@ -2,7 +2,15 @@ import command_code::*;
 
 module divide
 #( parameter integer reg_size = 8 )
-( divide_if.slave main );
+(
+
+	input logic clk, rst,
+	input logic[ reg_size-1 : 0 ] dividend_1, dividend_2, divider,
+	input logic data_valid_div, got_out_div, sign,
+	output logic[ reg_size-1 : 0 ] quotient, remainder,
+	output logic done_div, data_req_div, sign_out_div, zero_out_div, overflow_out_div
+
+);
 
 
 
@@ -11,7 +19,7 @@ module divide
 	logic [ reg_size-1 : 0 ] r1, r2, r3;
 	logic [ reg_size : 0 ] ra, rb, rc, sum;
 	logic [ $clog2( reg_size + 1 ) - 1 : 0 ] iterator;
-	logic add_1_trg, sign_wire, sign;
+	logic add_1_trg, sign_wire;
 	
 	enum
 	{
@@ -38,34 +46,35 @@ module divide
 
 
 
-	always_ff @( posedge main.clk )
-	if(main.rst)
+	always_ff @( posedge clk or posedge rst )
+	if(rst)
 	begin
 		state <= ZERO_DATA;
-		main.data_req <= 1;
-		main.done <= 0;
+		data_req_div <= 1;
+		done_div <= 0;
 
-		main.quotient <= 'b0;
-		main.remainder <= 'b0;
+		quotient <= 'b0;
+		remainder <= 'b0;
+		r1 <= 'b0;
+		overflow_out_div <= 0;
 	end
 	else
 	
 		unique case(state)
 		
 			ZERO_DATA:
-				state <= main.data_valid ? GOT_DATA : ZERO_DATA;
+				state <= data_valid_div ? GOT_DATA : ZERO_DATA;
 					
 			GOT_DATA:
 			begin
 
-				main.data_req <= 0;
+				data_req_div <= 0;
 
-				rb <= { 1'b0, main.dividend_1 };
-				r1 <= main.dividend_2;
-				r2 <= main.divider;
+				rb <= { 1'b0, dividend_1 };
+				r1 <= dividend_2;
+				r2 <= divider;
 				add_1_trg <= 1;
 				iterator <= iter_count;
-				sign <= main.sign;
 
 				state <= sign ? EXTRA_SHIFT_1 : CHECK_SUB_1;
 
@@ -155,20 +164,20 @@ module divide
 			DONE:
 			begin
 
-				main.quotient <= r1;
-				main.remainder <= rc[ reg_size : 1 ];
-				main.overflow_out <= 0;
+				quotient <= r1;
+				remainder <= rc[ reg_size : 1 ];
+				overflow_out_div <= 0;
 
-				if( main.got_out )
+				if( got_out_div )
 				begin
-					main.done <= 0;
-					main.data_req <= 1;
+					done_div <= 0;
+					data_req_div <= 1;
 					state <= ZERO_DATA;
 				end
 
 				else
 				begin
-					main.done <= 1;
+					done_div <= 1;
 					state <= DONE;
 				end
 					
@@ -177,20 +186,20 @@ module divide
 			ERROR:
 			begin
 
-				main.quotient <= 'b0;
-				main.remainder <= 'b0;
-				main.overflow_out <= 1;
+				quotient <= 'b0;
+				remainder <= 'b0;
+				overflow_out_div <= 1;
 
-				if( main.got_out )
+				if( got_out_div )
 				begin
-					main.done <= 0;
-					main.data_req <= 1;
+					done_div <= 0;
+					data_req_div <= 1;
 					state <= ZERO_DATA;
 				end
 
 				else
 				begin
-					main.done <= 1;
+					done_div <= 1;
 					state <= ERROR;
 				end
 
@@ -202,8 +211,8 @@ module divide
 	
 	assign sum = add_1_trg ? ra + rb + 1 : ra + rb;
 	assign sign_wire = rb[ reg_size-1 ] ^ r2[ reg_size-1 ];
-	assign main.zero_out = r1 == 'b0;
-	assign sign_out = r1[ reg_size-1 ];
+	assign zero_out_div = r1 == 'b0;
+	assign sign_out_div = r1[ reg_size-1 ];
 	
 
 endmodule : divide

@@ -10,7 +10,9 @@ package command_code;
 		AND = 'd4,
 		SUB = 'd5,
 		XOR = 'd6,
-		CMP = 'd7
+		CMP = 'd7,
+		DIV = 'd8,
+		IDIV = 'd9
 		
 	} commandCode_e;
 	
