@@ -1,6 +1,6 @@
 package command_code;
 
-	typedef enum
+	typedef enum logic[3:0]
 	{
 
 		ADD = 'd0,
@@ -12,7 +12,10 @@ package command_code;
 		XOR = 'd6,
 		CMP = 'd7,
 		DIV = 'd8,
-		IDIV = 'd9
+		IDIV = 'd9,
+		MUL = 'd10,
+		IMUL = 'd11,
+		MOV = 'd12
 		
 	} commandCode_e;
 	

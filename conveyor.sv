@@ -7,20 +7,29 @@ module conveyor
 ( bus_if.cpu bus );
 
 	localparam mem_adr_size = $clog2( mem_size );
-	localparam cpu_adr_size = $clog2( mem_size * word_size / reg_size );
+	localparam regs_in_word = word_size / reg_size;
+	localparam cpu_adr_size = $clog2( mem_size ) + $clog2( regs_in_word ) ;
 	localparam adr_dif = cpu_adr_size - mem_adr_size;
 
 	enum {
 
 		COMMAND_FETCH_1,
 		COMMAND_FETCH_2,
+		COMMAND_FETCH_3,
 		OPERAND_1_FETCH_1,
 		OPERAND_1_FETCH_2,
+		OPERAND_1_FETCH_3,
 		OPERAND_2_FETCH_1,
 		OPERAND_2_FETCH_2,
+		OPERAND_2_FETCH_3,
+		DIVIDEND_FETCH_1,
+		DIVIDEND_FETCH_2,
+		DIVIDEND_FETCH_3,
 		EXECUTE_START,
 		EXECUTE_WAIT,
-		STORE_RESULT
+		STORE_RESULT,
+		STORE_EXTRA_1,
+		STORE_EXTRA_2
 
 	} state;
 
@@ -36,11 +45,9 @@ module conveyor
 	
 	commandCode_e opcode;
 
-	logic [ reg_size-1 : 0 ] gpr [ gpr_number-1 : 0 ];
 	logic [ reg_size-1 : 0 ] flags;
 	logic [ cpu_adr_size-1 : 0 ] stack_pointer;
-	logic [ cpu_adr_size-1 : 0 ] command_pointer;
-	logic [ cpu_adr_size-1 : 0 ] current_addr;
+	logic [ mem_adr_size-1 : 0 ] command_pointer;
 
 	logic clk, rst;
 	logic carry_in, done_mult, done_div, got_out_div, got_out_mult, sign;
@@ -52,10 +59,15 @@ module conveyor
 	logic [ reg_size-1 : 0 ] quotient, remainder;
 	logic [ reg_size-1 : 0 ] mult_out_1, mult_out_2;
 	logic [ reg_size-1 : 0 ] out_simple;
+	logic gpr_read, gpr_write;
+	logic [ $clog2(gpr_number) - 1 : 0] gpr_addr_w, gpr_addr_r;
+	logic [ reg_size-1 : 0 ] gpr_datain, gpr_dataout;
+	logic [ reg_size-1 : 0 ] result_to_store;
 
 	simple_alu #( reg_size ) simple_alu(.*);
 	booth #( reg_size ) multiply(.*);
 	divide #( reg_size ) divide(.*);
+	general_purpose_registers #( reg_size, gpr_number ) gpr (.*);
 
 
 
@@ -70,14 +82,14 @@ module conveyor
 			bus.datain <= 'b0;
 			bus.read <= 0;
 			bus.write <= 0;
+			bus.addr_r <= 0;
 			state <= COMMAND_FETCH_1;
 			data_valid_div <= 0;
 			data_valid_mult <= 0;
 			got_out_div <= 0;
 			got_out_mult <= 0;
-
-			for( integer i = 0; i < gpr_number; i = i + 1 )
-				gpr[i] <= 'b0;
+			gpr_read <= 0;
+			gpr_write <= 0;
 		end
 		else
 
@@ -85,18 +97,24 @@ module conveyor
 
 			COMMAND_FETCH_1:
 			begin
-				bus.addr_r_cpu <= command_pointer;
+				bus.addr_r <= command_pointer;
 				bus.read <= 1;
 				bus.write <= 0;
+				gpr_write <= 0;
 
 				state <= COMMAND_FETCH_2;
 			end
 
 			COMMAND_FETCH_2:
 			begin
+				state <= COMMAND_FETCH_3;
+			end
+
+			COMMAND_FETCH_3:
+			begin
 				bus.read <= 0;
-				command_pointer <= command_pointer + 'b100;
-				current_command_s <= bus.dataout;
+				command_pointer <= command_pointer + 'd1;
+				current_command_s <= bus.dataout[reg_size*2+7:0];
 
 				state <= OPERAND_2_FETCH_1;
 			end
@@ -107,13 +125,15 @@ module conveyor
 
 					REGISTER:
 					begin
-						operand_a <= gpr[ current_command_s.address_a ];
-						state <= EXECUTE_START;
+						gpr_read <= 1;
+						gpr_addr_r <= current_command_s.address_a;
+
+						state <= OPERAND_1_FETCH_2;
 					end
 
 					MEMORY:
 					begin
-						bus.addr_r_cpu <= { {adr_dif{1'b0}}, current_command_s.address_a };
+						bus.addr_r <= current_command_s.address_a[reg_size-1:adr_dif];
 						bus.read <= 1;
 
 						state <= OPERAND_1_FETCH_2;
@@ -122,19 +142,34 @@ module conveyor
 					default:
 					begin
 						operand_a <= current_command_s.address_a;
-						state <= EXECUTE_START;
+						state <= opcode == DIV || opcode == IDIV ? DIVIDEND_FETCH_1 : EXECUTE_START;
 					end
 
 				endcase
 			end
 
 			OPERAND_1_FETCH_2:
-			begin
-				bus.read <= 0;
-				current_addr <= bus.addr_r_cpu;
-				operand_a <= bus.dataout[ reg_size*(current_addr+1)-1 : reg_size*current_addr ];
+				state <= OPERAND_1_FETCH_3;
 
-				state <= EXECUTE_START;
+			OPERAND_1_FETCH_3:
+			begin
+				case( current_command_s.opcode_st.store_a )
+
+					REGISTER:
+					begin
+						operand_a <= gpr_dataout;
+						gpr_read <= 0;
+					end
+
+					MEMORY:
+					begin
+						operand_a <= bus.dataout[ word_size-reg_size-reg_size*current_command_s.address_a[ adr_dif-1:0 ] +: reg_size ];
+						bus.read <= 0;
+					end
+
+				endcase
+
+				state <= opcode == DIV || opcode == IDIV ? DIVIDEND_FETCH_1 : EXECUTE_START;
 			end
 
 			OPERAND_2_FETCH_1:
@@ -143,13 +178,15 @@ module conveyor
 
 					REGISTER:
 					begin
-						operand_b <= gpr[ current_command_s.address_b ];
-						state <= OPERAND_1_FETCH_1;
+						gpr_read <= 1;
+						gpr_addr_r <= current_command_s.address_b;
+
+						state <= OPERAND_2_FETCH_2;
 					end
 
 					MEMORY:
 					begin
-						bus.addr_r_cpu <= current_command_s.address_b;
+						bus.addr_r <= current_command_s.address_b[reg_size-1:adr_dif];
 						bus.read <= 1;
 
 						state <= OPERAND_2_FETCH_2;
@@ -165,12 +202,46 @@ module conveyor
 			end
 
 			OPERAND_2_FETCH_2:
+				state <= OPERAND_2_FETCH_3;
+
+			OPERAND_2_FETCH_3:
 			begin
-				bus.read <= 0;
-				current_addr <= bus.addr_r_cpu;
-				operand_b <= bus.dataout[ reg_size*(current_addr+1)-1 : reg_size*current_addr ];
+				case( current_command_s.opcode_st.store_b )
+
+					REGISTER:
+					begin
+						operand_b <= gpr_dataout;
+						gpr_read <= 0;
+					end
+
+					MEMORY:
+					begin
+						operand_b <= bus.dataout[ word_size-reg_size-reg_size*current_command_s.address_b[ adr_dif-1:0 ] +: reg_size ];
+						bus.read <= 0;
+					end
+
+				endcase
 
 				state <= OPERAND_1_FETCH_1;
+			end
+
+			DIVIDEND_FETCH_1:
+			begin
+				gpr_read <= 1;
+				gpr_addr_r <= 'd3;
+
+				state <= DIVIDEND_FETCH_2;
+			end
+
+			DIVIDEND_FETCH_2:
+				state <= DIVIDEND_FETCH_3;
+
+			DIVIDEND_FETCH_3:
+			begin
+				gpr_read <= 0;
+				dividend_1 <= gpr_dataout;
+
+				state <= EXECUTE_START;
 			end
 
 			EXECUTE_START:
@@ -187,10 +258,43 @@ module conveyor
 						state <= data_req_div ? EXECUTE_WAIT : EXECUTE_START;
 					end
 
+					MUL, IMUL:
+					begin
+						got_out_mult <= 0;
+						data_valid_mult <= 1;
+
+						state <= data_req_mult ? EXECUTE_WAIT : EXECUTE_START;
+					end
+
+					MOV:
+						state <= STORE_RESULT;
+
 				endcase
 
 			EXECUTE_WAIT:
-				state <= done_div ? STORE_RESULT : EXECUTE_WAIT;
+				case( opcode )
+					DIV, IDIV:
+					begin
+						got_out_div <= done_div;
+						data_valid_div <= 0;
+
+						state <= done_div ? STORE_RESULT : EXECUTE_WAIT;
+					end
+
+					MUL, IMUL:
+					begin
+						got_out_mult <= done_mult;
+						data_valid_mult <= 0;
+
+						state <= done_mult ? STORE_RESULT : EXECUTE_WAIT;
+					end
+
+					default:
+						state <= STORE_RESULT;
+
+				endcase
+				
+				
 
 
 			STORE_RESULT:
@@ -203,61 +307,121 @@ module conveyor
 
 					REGISTER:
 					begin
-
+						
 						case( opcode )
 
 							ADD, ADC, SUB, SBB, CMP, OR, AND, XOR:
-								gpr[ current_command_s.address_a ] <= out_simple;
+								gpr_datain <= out_simple;
 
 							DIV, IDIV:
-								gpr[ current_command_s.address_a ] <= quotient;
+								gpr_datain <= quotient;
+
+							MUL, IMUL:
+								gpr_datain <= mult_out_2;
+
+							MOV:
+								gpr_datain <= operand_b;
 
 						endcase
+
+						gpr_addr_w <= current_command_s.address_a;
+						gpr_write <= 1;
 					end
 
 					MEMORY:
 					begin
 						
-						case( opcode )
+						for( integer i = 0; i < regs_in_word; i = i + 1 )
+							if( i == current_command_s.address_a[ adr_dif-1:0] )
+								bus.datain[  word_size-reg_size-reg_size*i +:reg_size ] <= result_to_store;
+							else
+								bus.datain[ word_size-reg_size-reg_size*i +:reg_size ] <=
+									bus.dataout[ word_size-reg_size-reg_size*i +:reg_size ];
 
-							ADD, ADC, SUB, SBB, CMP, OR, AND, XOR:
-							begin
-								bus.datain <= out_simple;
-								bus.addr_w_cpu <= { {adr_dif{1'b0}}, current_command_s.address_a };
-								bus.write = 1;
-							end
-
-							DIV, IDIV:
-							begin
-								bus.datain <= quotient;
-								bus.addr_w_cpu <= { {adr_dif{1'b0}}, current_command_s.address_a };
-							
-							end
-
-						endcase
-
+						bus.addr_w <= current_command_s.address_a[ reg_size-1 : adr_dif ];
 						bus.write <= 1;
 					end
 
 					default:
 					begin
-						
+
 						case( opcode )
 
 							ADD, ADC, SUB, SBB, CMP, OR, AND, XOR:
-								gpr[0] <= out_simple;
+								gpr_datain <= out_simple;
 
 							DIV, IDIV:
-								gpr[0] <= quotient;
+								gpr_datain <= quotient;
+
+							MUL, IMUL:
+								gpr_datain <= mult_out_2;
 
 						endcase
+
+						gpr_addr_w <= 'd0;
+						gpr_write <= 1;
+					end
+
+				endcase
+
+				if( current_command_s.opcode_st.store_a == REGISTER &&
+				 ( opcode == DIV || opcode == IDIV || opcode == MUL || opcode == IMUL ) )
+					state <= STORE_EXTRA_1;
+				else
+				begin
+					case(opcode)
+
+						DIV, IDIV:
+						begin
+							gpr_datain <= remainder;
+							gpr_addr_w <= 'd2;
+							gpr_write <= 1;
+						end
+
+						MUL, IMUL:
+						begin
+							gpr_datain <= mult_out_1;
+							gpr_addr_w <= 'd1;
+							gpr_write <= 1;
+						end
+
+					endcase
+
+					state <= COMMAND_FETCH_1;
+				end
+
+			end
+
+			STORE_EXTRA_1:
+			begin
+				gpr_write <= 0;
+				state <= STORE_EXTRA_2;
+			end
+
+			STORE_EXTRA_2:
+			begin
+				case(opcode)
+
+					DIV, IDIV:
+					begin
+						gpr_datain <= remainder;
+						gpr_addr_w <= 'd2;
+						gpr_write <= 1;
+					end
+
+					MUL, IMUL:
+					begin
+						gpr_datain <= mult_out_1;
+						gpr_addr_w <= 'd1;
+						gpr_write <= 1;
 					end
 
 				endcase
 
 				state <= COMMAND_FETCH_1;
-
 			end
+
+			
 
 		endcase
 
@@ -265,12 +429,28 @@ module conveyor
 
 
 
+	always_comb
+		case(opcode)
+			ADD, ADC, SUB, SBB, CMP, OR, AND, XOR:
+				result_to_store = out_simple;
+
+			DIV, IDIV:
+				result_to_store = quotient;
+
+			MUL, IMUL:
+				result_to_store = mult_out_2;
+			
+			default:
+				result_to_store = operand_b;
+		endcase
+
+
+
 	assign clk = bus.clk;
 	assign rst = bus.rst;
 	assign carry_in = flags[ 'h1 ];
 	assign opcode = current_command_s.opcode_st.opcode;
-	assign sign = opcode == IDIV;
-	assign dividend_1 = gpr[3];
+	assign sign = opcode == IDIV || opcode == IMUL;
 	assign dividend_2 = operand_a;
 	assign divider = operand_b;
 

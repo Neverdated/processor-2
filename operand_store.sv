@@ -1,6 +1,6 @@
 package operand_store;
 
-	typedef enum
+	typedef enum logic[1:0]
 	{
 
 		IMMEDIATE = 'd0,
