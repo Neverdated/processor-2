@@ -34,20 +34,23 @@ module simple_alu
 
 
 
-			//out carry sign
+			//result
 			case( opcode )
 
-				ADD, ADC, SUB, SBB:
+				ADD, ADC, SUB, SBB, CMP:
 					result <= sum[ reg_size-1 : 0 ];
 
 				OR:
 					result <= operand_a | operand_b;
 
-				AND:
+				AND, TEST:
 					result <= operand_a & operand_b;
 
 				XOR:
 					result <= operand_a ^ operand_b;
+
+				NOT:
+					result <= ~operand_b;
 
 				default:
 					result <= operand_a;
@@ -56,7 +59,7 @@ module simple_alu
 
 
 
-			//overflow
+			//overflow carry
 			case(opcode)
 
 				ADD, ADC, SUB, SBB, CMP:
@@ -110,7 +113,7 @@ module simple_alu
 		endcase
 
 	assign sign_out_simple = result[reg_size-1];
-	assign zero_out_simple = result == 0;
+	assign zero_out_simple = result == 'b0;
 	assign out_simple = result;
 
 

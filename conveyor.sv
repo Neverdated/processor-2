@@ -45,7 +45,7 @@ module conveyor
 	
 	commandCode_e opcode;
 
-	logic [ reg_size-1 : 0 ] flags;
+	logic [ 15 : 0 ] flags;
 	logic [ cpu_adr_size-1 : 0 ] stack_pointer;
 	logic [ mem_adr_size-1 : 0 ] command_pointer;
 
@@ -78,7 +78,7 @@ module conveyor
 		begin
 			command_pointer <= 'b0;
 			stack_pointer <= 'b0;
-			flags <= 'b0;
+			flags <= 16'b0000_0000_0000_0010;
 			bus.datain <= 'b0;
 			bus.read <= 0;
 			bus.write <= 0;
@@ -114,7 +114,7 @@ module conveyor
 			begin
 				bus.read <= 0;
 				command_pointer <= command_pointer + 'd1;
-				current_command_s <= bus.dataout[reg_size*2+7:0];
+				current_command_s <= bus.dataout[reg_size*2+4+4:0];
 
 				state <= OPERAND_2_FETCH_1;
 			end
@@ -142,7 +142,8 @@ module conveyor
 					default:
 					begin
 						operand_a <= current_command_s.address_a;
-						state <= opcode == DIV || opcode == IDIV ? DIVIDEND_FETCH_1 : EXECUTE_START;
+						state <= opcode == MUL || opcode == IMUL ||
+						 opcode == DIV || opcode == IDIV ? DIVIDEND_FETCH_1 : EXECUTE_START;
 					end
 
 				endcase
@@ -169,7 +170,8 @@ module conveyor
 
 				endcase
 
-				state <= opcode == DIV || opcode == IDIV ? DIVIDEND_FETCH_1 : EXECUTE_START;
+				state <= opcode == MUL || opcode == IMUL ||
+				 opcode == DIV || opcode == IDIV ? DIVIDEND_FETCH_1 : EXECUTE_START;
 			end
 
 			OPERAND_2_FETCH_1:
@@ -247,9 +249,6 @@ module conveyor
 			EXECUTE_START:
 				case( opcode )
 
-					ADD, ADC, SUB, SBB, CMP, OR, AND, XOR:
-						state <= STORE_RESULT;
-
 					DIV, IDIV:
 					begin
 						got_out_div <= 0;
@@ -266,13 +265,14 @@ module conveyor
 						state <= data_req_mult ? EXECUTE_WAIT : EXECUTE_START;
 					end
 
-					MOV:
+					default:
 						state <= STORE_RESULT;
 
 				endcase
 
 			EXECUTE_WAIT:
 				case( opcode )
+
 					DIV, IDIV:
 					begin
 						got_out_div <= done_div;
@@ -302,67 +302,162 @@ module conveyor
 
 				got_out_div <= 0;
 				got_out_mult <= 0;
-						
-				case( current_command_s.opcode_st.store_a )
 
-					REGISTER:
+				case(opcode)
+
+					ADD, ADC, SUB, SBB, CMP, OR, AND, XOR, CMP, TEST:
 					begin
-						
-						case( opcode )
-
-							ADD, ADC, SUB, SBB, CMP, OR, AND, XOR:
-								gpr_datain <= out_simple;
-
-							DIV, IDIV:
-								gpr_datain <= quotient;
-
-							MUL, IMUL:
-								gpr_datain <= mult_out_2;
-
-							MOV:
-								gpr_datain <= operand_b;
-
-						endcase
-
-						gpr_addr_w <= current_command_s.address_a;
-						gpr_write <= 1;
+						flags[0] <= carry_out_simple;
+						flags[6] <= zero_out_simple;
+						flags[7] <= sign_out_simple;
+						flags[11] <= overflow_out_simple;
 					end
 
-					MEMORY:
-					begin
-						
-						for( integer i = 0; i < regs_in_word; i = i + 1 )
-							if( i == current_command_s.address_a[ adr_dif-1:0] )
-								bus.datain[  word_size-reg_size-reg_size*i +:reg_size ] <= result_to_store;
-							else
-								bus.datain[ word_size-reg_size-reg_size*i +:reg_size ] <=
-									bus.dataout[ word_size-reg_size-reg_size*i +:reg_size ];
+					CLC:
+						flags[0] <= 0;
 
-						bus.addr_w <= current_command_s.address_a[ reg_size-1 : adr_dif ];
-						bus.write <= 1;
+					STC:
+						flags[0] <= 1;
+
+					CLD:
+						flags[10] <= 0;
+
+					STD:
+						flags[10] <= 1;
+
+					CLI:
+						flags[9] <= 0;
+
+					STI:
+						flags[9] <= 1;
+
+					CMC:
+						flags[0] <= ~carry_in;
+
+					DIV, IDIV:
+					begin
+						flags[0] <= 0;		//carry
+						flags[6] <= zero_out_div;
+						flags[7] <= sign_out_div;
+						flags[11] <= overflow_out_div;
 					end
 
-					default:
+					MUL, IMUL:
 					begin
-
-						case( opcode )
-
-							ADD, ADC, SUB, SBB, CMP, OR, AND, XOR:
-								gpr_datain <= out_simple;
-
-							DIV, IDIV:
-								gpr_datain <= quotient;
-
-							MUL, IMUL:
-								gpr_datain <= mult_out_2;
-
-						endcase
-
-						gpr_addr_w <= 'd0;
-						gpr_write <= 1;
+						flags[0] <= 0;		//carry
+						flags[6] <= zero_out_mult;
+						flags[7] <= sign_out_mult;
+						flags[11] <= 0;		//overflow
 					end
 
 				endcase
+
+
+				case(opcode)
+
+					JA:
+						if( ~flags[0] & ~flags[6] )
+							command_pointer <= operand_a;
+
+					JNC:
+						if( ~flags[0] )
+							command_pointer <= operand_a;
+
+					JC:
+						if( flags[0] )
+							command_pointer <= operand_a;
+
+					JBE:
+						if( flags[0] | flags[6] )
+							command_pointer <= operand_a;
+
+					JZ:
+						if( flags[6] )
+							command_pointer <= operand_a;
+
+					JG:
+						if( ~flags[6] & flags[7] == flags[11] )
+							command_pointer <= operand_a;
+
+					JGE:
+						if( flags[7] == flags[11] )
+							command_pointer <= operand_a;
+
+					JL:
+						if( flags[7] != flags[11] )
+							command_pointer <= operand_a;
+
+					JLE:
+						if( flags[6] | flags[7] != flags[11] )
+							command_pointer <= operand_a;
+
+					JMP:
+						command_pointer <= operand_a;
+
+					JNG:
+						if( flags[6] & flags[7] != flags[11] )
+							command_pointer <= operand_a;
+
+					JNLE:
+						if( ~flags[6] & flags[7] == flags[11] )
+							command_pointer <= operand_a;
+
+					JNO:
+						if( ~flags[11] )
+							command_pointer <= operand_a;
+
+					JNS:
+						if( ~flags[7] )
+							command_pointer <= operand_a;
+
+					JNZ:
+						if( flags[6] )
+							command_pointer <= operand_a;
+
+					JS:
+						if( ~flags[0] & ~flags[6] )
+							command_pointer <= operand_a;
+
+					JZ:
+						if( ~flags[0] & ~flags[6] )
+							command_pointer <= operand_a;
+
+					ADD, OR, ADC, SBB, AND, SUB, XOR, NOT, DIV, IDIV, MUL, IMUL, MOV:
+						case( current_command_s.opcode_st.store_a )
+
+							REGISTER:
+							begin
+								gpr_datain <= result_to_store;
+								gpr_addr_w <= current_command_s.address_a;
+								gpr_write <= 1;
+							end
+
+							MEMORY:
+							begin
+								
+								for( integer i = 0; i < regs_in_word; i = i + 1 )
+									if( i == current_command_s.address_a[ adr_dif-1:0] )
+										bus.datain[  word_size-reg_size-reg_size*i +:reg_size ] <= result_to_store;
+									else
+										bus.datain[ word_size-reg_size-reg_size*i +:reg_size ] <=
+											bus.dataout[ word_size-reg_size-reg_size*i +:reg_size ];
+
+								bus.addr_w <= current_command_s.address_a[ reg_size-1 : adr_dif ];
+								bus.write <= 1;
+							end
+
+							default:
+							begin
+
+								gpr_datain <= result_to_store;
+								gpr_addr_w <= 'd0;
+								gpr_write <= 1;
+							end
+
+						endcase
+
+				endcase
+
 
 				if( current_command_s.opcode_st.store_a == REGISTER &&
 				 ( opcode == DIV || opcode == IDIV || opcode == MUL || opcode == IMUL ) )
@@ -431,7 +526,7 @@ module conveyor
 
 	always_comb
 		case(opcode)
-			ADD, ADC, SUB, SBB, CMP, OR, AND, XOR:
+			ADD, ADC, SUB, SBB, CMP, OR, AND, XOR, NOT, CMP, TEST:
 				result_to_store = out_simple;
 
 			DIV, IDIV:
@@ -448,7 +543,7 @@ module conveyor
 
 	assign clk = bus.clk;
 	assign rst = bus.rst;
-	assign carry_in = flags[ 'h1 ];
+	assign carry_in = flags[0];
 	assign opcode = current_command_s.opcode_st.opcode;
 	assign sign = opcode == IDIV || opcode == IMUL;
 	assign dividend_2 = operand_a;
