@@ -19,17 +19,17 @@ module conveyor
 		OPERAND_1_FETCH_1,
 		OPERAND_1_FETCH_2,
 		OPERAND_1_FETCH_3,
+		OPERAND_1_FETCH_4,
+		OPERAND_1_FETCH_5,
 		OPERAND_2_FETCH_1,
 		OPERAND_2_FETCH_2,
 		OPERAND_2_FETCH_3,
-		DIVIDEND_FETCH_1,
-		DIVIDEND_FETCH_2,
-		DIVIDEND_FETCH_3,
+		OPERAND_2_FETCH_4,
+		OPERAND_2_FETCH_5,
 		EXECUTE_START,
 		EXECUTE_WAIT,
-		STORE_RESULT,
-		STORE_EXTRA_1,
-		STORE_EXTRA_2
+		STORE_RESULT_1,
+		STORE_RESULT_2
 
 	} state;
 
@@ -59,9 +59,9 @@ module conveyor
 	logic [ reg_size-1 : 0 ] quotient, remainder;
 	logic [ reg_size-1 : 0 ] mult_out_1, mult_out_2;
 	logic [ reg_size-1 : 0 ] out_simple;
-	logic gpr_read, gpr_write;
-	logic [ $clog2(gpr_number) - 1 : 0] gpr_addr_w, gpr_addr_r;
-	logic [ reg_size-1 : 0 ] gpr_datain, gpr_dataout;
+	logic gpr_read_1, gpr_read_2, gpr_write_1, gpr_write_2;
+	logic [ $clog2(gpr_number) - 1 : 0] gpr_addr_w_1, gpr_addr_w_2, gpr_addr_r_1, gpr_addr_r_2;
+	logic [ reg_size-1 : 0 ] gpr_datain_1, gpr_datain_2, gpr_dataout_1, gpr_dataout_2;
 	logic [ reg_size-1 : 0 ] result_to_store;
 
 	simple_alu #( reg_size ) simple_alu(.*);
@@ -82,14 +82,26 @@ module conveyor
 			bus.datain <= 'b0;
 			bus.read <= 0;
 			bus.write <= 0;
-			bus.addr_r <= 0;
+			bus.addr_r <= 'b0;
+			bus.addr_w <= 'b0;
 			state <= COMMAND_FETCH_1;
 			data_valid_div <= 0;
 			data_valid_mult <= 0;
 			got_out_div <= 0;
 			got_out_mult <= 0;
-			gpr_read <= 0;
-			gpr_write <= 0;
+			operand_a <= 'b0;
+			operand_b <= 'b0;
+			dividend_1 <= 'b0;
+			gpr_datain_1 <= 'b0;
+			gpr_datain_2 <= 'b0;
+			gpr_read_1 <= 0;
+			gpr_read_2 <= 0;
+			gpr_write_1 <= 0;
+			gpr_write_2 <= 0;
+			gpr_addr_r_1 <= 'b0;
+			gpr_addr_r_2 <= 'b0;
+			gpr_addr_w_1 <= 'b0;
+			gpr_addr_w_2 <= 'b0;
 		end
 		else
 
@@ -100,7 +112,8 @@ module conveyor
 				bus.addr_r <= command_pointer;
 				bus.read <= 1;
 				bus.write <= 0;
-				gpr_write <= 0;
+				gpr_write_1 <= 0;
+				gpr_write_2 <= 0;
 
 				state <= COMMAND_FETCH_2;
 			end
@@ -114,19 +127,21 @@ module conveyor
 			begin
 				bus.read <= 0;
 				command_pointer <= command_pointer + 'd1;
-				current_command_s <= bus.dataout[reg_size*2+4+4:0];
+				current_command_s <= bus.dataout[reg_size*2+4+2*2:0];
 
 				state <= OPERAND_2_FETCH_1;
 			end
 
 			OPERAND_1_FETCH_1:
 			begin
+				gpr_write_1 <= 0;
+
 				case( current_command_s.opcode_st.store_a )
 
-					REGISTER:
+					REGISTER, INDIRECT:
 					begin
-						gpr_read <= 1;
-						gpr_addr_r <= current_command_s.address_a;
+						gpr_read_1 <= 1;
+						gpr_addr_r_1 <= current_command_s.address_a;
 
 						state <= OPERAND_1_FETCH_2;
 					end
@@ -142,11 +157,16 @@ module conveyor
 					default:
 					begin
 						operand_a <= current_command_s.address_a;
-						state <= opcode == MUL || opcode == IMUL ||
-						 opcode == DIV || opcode == IDIV ? DIVIDEND_FETCH_1 : EXECUTE_START;
+						state <= opcode == DIV || opcode == IDIV ? OPERAND_1_FETCH_2 : EXECUTE_START;
 					end
 
 				endcase
+
+				if( opcode == DIV || opcode == IDIV )
+				begin
+					gpr_read_2 <= 1;
+					gpr_addr_r_2 <= 'd3;
+				end
 			end
 
 			OPERAND_1_FETCH_2:
@@ -158,30 +178,68 @@ module conveyor
 
 					REGISTER:
 					begin
-						operand_a <= gpr_dataout;
-						gpr_read <= 0;
+						operand_a <= gpr_dataout_1;
+						gpr_read_1 <= 0;
+
+						state <= EXECUTE_START;
 					end
 
 					MEMORY:
 					begin
 						operand_a <= bus.dataout[ word_size-reg_size-reg_size*current_command_s.address_a[ adr_dif-1:0 ] +: reg_size ];
 						bus.read <= 0;
+
+						state <= EXECUTE_START;
+					end
+
+					INDIRECT:
+					begin
+						bus.addr_r <= gpr_dataout_1[ reg_size-1 : adr_dif ];
+						gpr_read_1 <= 0;
+						bus.read <= 1;
+						
+						state <= OPERAND_1_FETCH_4;
 					end
 
 				endcase
 
-				state <= opcode == MUL || opcode == IMUL ||
-				 opcode == DIV || opcode == IDIV ? DIVIDEND_FETCH_1 : EXECUTE_START;
+				if( opcode == DIV || opcode == IDIV )
+				begin
+					gpr_read_2 <= 0;
+					dividend_1 <= gpr_dataout_2;
+				end
+				
+			end
+
+			OPERAND_1_FETCH_4:
+				state <= OPERAND_1_FETCH_5;
+
+			OPERAND_1_FETCH_5:
+			begin
+				//INDIRECT only
+				operand_a <= bus.dataout[ word_size-reg_size-reg_size*gpr_dataout_1[ adr_dif-1:0 ] +: reg_size ];
+				bus.read <= 0;
+
+				state <= EXECUTE_START;
 			end
 
 			OPERAND_2_FETCH_1:
 			begin
+
+				if( opcode == JAL )
+				begin
+					operand_b <= { 'b0, command_pointer };
+
+					state <= OPERAND_1_FETCH_1;
+
+				end
+				else
 				case( current_command_s.opcode_st.store_b )
 
-					REGISTER:
+					REGISTER, INDIRECT:
 					begin
-						gpr_read <= 1;
-						gpr_addr_r <= current_command_s.address_b;
+						gpr_read_1 <= 1;
+						gpr_addr_r_1 <= current_command_s.address_b;
 
 						state <= OPERAND_2_FETCH_2;
 					end
@@ -201,6 +259,13 @@ module conveyor
 					end
 
 				endcase
+
+				if( opcode == JAL || opcode == JALR )
+				begin
+					gpr_addr_w_1 <= 'd3;
+					gpr_datain_1 <= { 'b0, command_pointer };
+					gpr_write_1 <= 1;
+				end
 			end
 
 			OPERAND_2_FETCH_2:
@@ -212,38 +277,43 @@ module conveyor
 
 					REGISTER:
 					begin
-						operand_b <= gpr_dataout;
-						gpr_read <= 0;
+						operand_b <= gpr_dataout_1;
+						gpr_read_1 <= 0;
+
+						state <= OPERAND_1_FETCH_1;
 					end
 
 					MEMORY:
 					begin
 						operand_b <= bus.dataout[ word_size-reg_size-reg_size*current_command_s.address_b[ adr_dif-1:0 ] +: reg_size ];
 						bus.read <= 0;
+
+						state <= OPERAND_1_FETCH_1;
+					end
+
+					INDIRECT:
+					begin
+						bus.addr_r <= gpr_dataout_1[ reg_size-1 : adr_dif ];
+						gpr_read_1 <= 0;
+						bus.read <= 1;
+						
+						state <= OPERAND_2_FETCH_4;
 					end
 
 				endcase
 
+			end
+
+			OPERAND_2_FETCH_4:
+				state <= OPERAND_2_FETCH_5;
+
+			OPERAND_2_FETCH_5:
+			begin
+				//INDIRECT only
+				operand_b <= bus.dataout[ word_size-reg_size-reg_size*gpr_dataout_1[ adr_dif-1:0 ] +: reg_size ];
+				bus.read <= 0;
+
 				state <= OPERAND_1_FETCH_1;
-			end
-
-			DIVIDEND_FETCH_1:
-			begin
-				gpr_read <= 1;
-				gpr_addr_r <= 'd3;
-
-				state <= DIVIDEND_FETCH_2;
-			end
-
-			DIVIDEND_FETCH_2:
-				state <= DIVIDEND_FETCH_3;
-
-			DIVIDEND_FETCH_3:
-			begin
-				gpr_read <= 0;
-				dividend_1 <= gpr_dataout;
-
-				state <= EXECUTE_START;
 			end
 
 			EXECUTE_START:
@@ -266,7 +336,7 @@ module conveyor
 					end
 
 					default:
-						state <= STORE_RESULT;
+						state <= STORE_RESULT_1;
 
 				endcase
 
@@ -278,7 +348,7 @@ module conveyor
 						got_out_div <= done_div;
 						data_valid_div <= 0;
 
-						state <= done_div ? STORE_RESULT : EXECUTE_WAIT;
+						state <= done_div ? STORE_RESULT_1 : EXECUTE_WAIT;
 					end
 
 					MUL, IMUL:
@@ -286,18 +356,18 @@ module conveyor
 						got_out_mult <= done_mult;
 						data_valid_mult <= 0;
 
-						state <= done_mult ? STORE_RESULT : EXECUTE_WAIT;
+						state <= done_mult ? STORE_RESULT_1 : EXECUTE_WAIT;
 					end
 
 					default:
-						state <= STORE_RESULT;
+						state <= STORE_RESULT_1;
 
 				endcase
 				
 				
 
 
-			STORE_RESULT:
+			STORE_RESULT_1:
 			begin
 
 				got_out_div <= 0;
@@ -355,168 +425,157 @@ module conveyor
 
 				case(opcode)
 
-					JA:
-						if( ~flags[0] & ~flags[6] )
-							command_pointer <= operand_a;
-
-					JNC:
-						if( ~flags[0] )
-							command_pointer <= operand_a;
-
-					JC:
-						if( flags[0] )
-							command_pointer <= operand_a;
-
-					JBE:
-						if( flags[0] | flags[6] )
-							command_pointer <= operand_a;
-
-					JZ:
+					BEQ:
+					begin
 						if( flags[6] )
-							command_pointer <= operand_a;
+							command_pointer <= out_simple[ mem_adr_size-1 : 0 ];
 
-					JG:
-						if( ~flags[6] & flags[7] == flags[11] )
-							command_pointer <= operand_a;
+						state <= COMMAND_FETCH_1;
+					end
 
-					JGE:
-						if( flags[7] == flags[11] )
-							command_pointer <= operand_a;
+					BNE:
+					begin
+						if( ~flags[6] )
+							command_pointer <= out_simple[ mem_adr_size-1 : 0 ];
 
-					JL:
+						state <= COMMAND_FETCH_1;
+					end
+
+					BLT:
+					begin
 						if( flags[7] != flags[11] )
-							command_pointer <= operand_a;
+							command_pointer <= out_simple[ mem_adr_size-1 : 0 ];
 
-					JLE:
-						if( flags[6] | flags[7] != flags[11] )
-							command_pointer <= operand_a;
+						state <= COMMAND_FETCH_1;
+					end
 
-					JMP:
-						command_pointer <= operand_a;
+					BGE:
+					begin
+						if( flags[7] == flags[11] )
+							command_pointer <= out_simple[ mem_adr_size-1 : 0 ];
 
-					JNG:
-						if( flags[6] & flags[7] != flags[11] )
-							command_pointer <= operand_a;
+						state <= COMMAND_FETCH_1;
+					end
 
-					JNLE:
-						if( ~flags[6] & flags[7] == flags[11] )
-							command_pointer <= operand_a;
+					BLTU:
+					begin
+						if( ~flags[0] )
+							command_pointer <= out_simple[ mem_adr_size-1 : 0 ];
 
-					JNO:
-						if( ~flags[11] )
-							command_pointer <= operand_a;
+						state <= COMMAND_FETCH_1;
+					end
 
-					JNS:
-						if( ~flags[7] )
-							command_pointer <= operand_a;
+					BGEU:
+					begin
+						if( flags[0] )
+							command_pointer <= out_simple[ mem_adr_size-1 : 0 ];
 
-					JNZ:
-						if( flags[6] )
-							command_pointer <= operand_a;
+						state <= COMMAND_FETCH_1;
+					end
 
-					JS:
-						if( ~flags[0] & ~flags[6] )
-							command_pointer <= operand_a;
+					JAL:
+					begin
+						command_pointer <= out_simple[ mem_adr_size-1 : 0 ];
 
-					JZ:
-						if( ~flags[0] & ~flags[6] )
-							command_pointer <= operand_a;
+						state <= COMMAND_FETCH_1;
+					end
+					JALR:
+					begin
+						command_pointer <= out_simple[ mem_adr_size-1 : 0 ];
+
+						state <= COMMAND_FETCH_1;
+					end
 
 					ADD, OR, ADC, SBB, AND, SUB, XOR, NOT, DIV, IDIV, MUL, IMUL, MOV:
+					begin
 						case( current_command_s.opcode_st.store_a )
 
 							REGISTER:
 							begin
-								gpr_datain <= result_to_store;
-								gpr_addr_w <= current_command_s.address_a;
-								gpr_write <= 1;
+								gpr_datain_1 <= result_to_store;
+								gpr_addr_w_1 <= current_command_s.address_a;
+
 							end
 
 							MEMORY:
 							begin
 								
 								for( integer i = 0; i < regs_in_word; i = i + 1 )
-									if( i == current_command_s.address_a[ adr_dif-1:0] )
+									if( i == current_command_s.address_a[ adr_dif-1:0]  )
 										bus.datain[  word_size-reg_size-reg_size*i +:reg_size ] <= result_to_store;
 									else
 										bus.datain[ word_size-reg_size-reg_size*i +:reg_size ] <=
 											bus.dataout[ word_size-reg_size-reg_size*i +:reg_size ];
 
 								bus.addr_w <= current_command_s.address_a[ reg_size-1 : adr_dif ];
-								bus.write <= 1;
+							end
+
+							INDIRECT:
+							begin
+								
+								for( integer i = 0; i < regs_in_word; i = i + 1 )
+									if( i == gpr_dataout_1[ adr_dif-1 : 0 ] )
+										bus.datain[ word_size-reg_size-reg_size*i +:reg_size ] <= result_to_store;
+									else
+										bus.datain[ word_size-reg_size-reg_size*i +:reg_size ] <=
+											bus.dataout[ word_size-reg_size-reg_size*i +:reg_size ];
+
+								bus.addr_w <= gpr_dataout_1[ reg_size-1 : adr_dif ];
 							end
 
 							default:
 							begin
 
-								gpr_datain <= result_to_store;
-								gpr_addr_w <= 'd0;
-								gpr_write <= 1;
+								gpr_datain_1 <= result_to_store;
+								gpr_addr_w_1 <= 'd0;
 							end
 
 						endcase
 
+						state <= STORE_RESULT_2;
+					end
+
+					default:
+						state <= COMMAND_FETCH_1;
+
 				endcase
 
 
-				if( current_command_s.opcode_st.store_a == REGISTER &&
-				 ( opcode == DIV || opcode == IDIV || opcode == MUL || opcode == IMUL ) )
-					state <= STORE_EXTRA_1;
-				else
-				begin
-					case(opcode)
-
-						DIV, IDIV:
-						begin
-							gpr_datain <= remainder;
-							gpr_addr_w <= 'd2;
-							gpr_write <= 1;
-						end
-
-						MUL, IMUL:
-						begin
-							gpr_datain <= mult_out_1;
-							gpr_addr_w <= 'd1;
-							gpr_write <= 1;
-						end
-
-					endcase
-
-					state <= COMMAND_FETCH_1;
-				end
-
-			end
-
-			STORE_EXTRA_1:
-			begin
-				gpr_write <= 0;
-				state <= STORE_EXTRA_2;
-			end
-
-			STORE_EXTRA_2:
-			begin
 				case(opcode)
 
 					DIV, IDIV:
 					begin
-						gpr_datain <= remainder;
-						gpr_addr_w <= 'd2;
-						gpr_write <= 1;
+						gpr_datain_2 <= remainder;
+						gpr_addr_w_2 <= 'd2;
 					end
 
 					MUL, IMUL:
 					begin
-						gpr_datain <= mult_out_1;
-						gpr_addr_w <= 'd1;
-						gpr_write <= 1;
+						gpr_datain_2 <= mult_out_1;
+						gpr_addr_w_2 <= 'd1;
 					end
 
 				endcase
 
-				state <= COMMAND_FETCH_1;
 			end
 
-			
+			STORE_RESULT_2:
+			begin
+				case( current_command_s.opcode_st.store_a )
+
+					MEMORY, INDIRECT:
+						bus.write <= 1;
+
+					default:
+						gpr_write_1 <= 1;
+
+				endcase
+
+				if( opcode == MUL || opcode == IMUL || opcode == DIV || opcode == IDIV )
+					gpr_write_2 <= 1;
+
+				state <= COMMAND_FETCH_1;
+			end			
 
 		endcase
 
@@ -526,7 +585,7 @@ module conveyor
 
 	always_comb
 		case(opcode)
-			ADD, ADC, SUB, SBB, CMP, OR, AND, XOR, NOT, CMP, TEST:
+			ADD, ADC, SUB, SBB, CMP, OR, AND, XOR, NOT:
 				result_to_store = out_simple;
 
 			DIV, IDIV:

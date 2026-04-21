@@ -25,23 +25,14 @@ package command_code;
 		CLI = 'd19,
 		STI = 'd20,
 		CMC = 'd21,
-		JA = 'd22,
-		JZ = 'd23,
-		JBE = 'd24,
-		JC = 'd25,
-		JS = 'd26,
-		JG = 'd27,
-		JGE = 'd28,
-		JL = 'd29,
-		JLE = 'd30,
-		JMP = 'd31,
-		JNC = 'd32,
-		JNG = 'd33,
-		JNLE = 'd34,
-		JNO = 'd35,
-		JNS = 'd36,
-		JNZ = 'd37,
-		JO = 'd38
+		BEQ = 'd22,
+		BNE = 'd23,
+		BLT = 'd24,
+		BGE = 'd25,
+		BLTU = 'd26,
+		BGEU = 'd27,
+		JAL = 'd28,
+		JALR = 'd29
 		
 	} commandCode_e;
 	

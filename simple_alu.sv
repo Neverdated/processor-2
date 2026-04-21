@@ -37,7 +37,7 @@ module simple_alu
 			//result
 			case( opcode )
 
-				ADD, ADC, SUB, SBB, CMP:
+				ADD, ADC, SUB, SBB, CMP, BEQ, BNE, BLT, BGE, BLTU, BGEU, JAL, JALR:
 					result <= sum[ reg_size-1 : 0 ];
 
 				OR:

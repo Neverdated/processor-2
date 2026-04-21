@@ -6,7 +6,7 @@ package operand_store;
 		IMMEDIATE = 'd0,
 		REGISTER = 'd1,
 		MEMORY = 'd2,
-		RELATIVE = 'd3
+		INDIRECT = 'd3
 		
 	} operandStore_e;
 	
